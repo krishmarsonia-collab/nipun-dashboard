@@ -1,0 +1,23 @@
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700&family=Poppins:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-family: 'Poppins', sans-serif;
+  background: #f0f7fc;
+  color: #144d74;
+}
+
+.font-heading {
+  font-family: 'Baloo 2', 'Poppins', sans-serif;
+}
+
+.bg-good-light { background-color: #d5f9e2; }
+.bg-bad-light { background-color: #ffe1df; }
+.text-good { color: #22b566; }
+.text-bad { color: #f0473f; }
+.text-avg { color: #f9a007; }
+.text-leaf-600 { color: #169153; }
