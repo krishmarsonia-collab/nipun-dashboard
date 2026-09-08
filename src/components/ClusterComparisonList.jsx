@@ -28,10 +28,10 @@ function PctCell({ stats, categoryKey }) {
   const count = stats.combined[categoryKey];
   return (
     <div className="leading-tight">
-      <span className="font-heading font-bold text-sm" style={{ color: cat.color }}>
+      <span className="font-heading font-bold text-base" style={{ color: cat.color }}>
         {pctVal}%
       </span>
-      <p className="text-[10px] text-sky-600/50 mt-0.5">{count.toLocaleString()}</p>
+      <p className="text-xs text-sky-600/55 mt-1">{count.toLocaleString()}</p>
     </div>
   );
 }
@@ -49,7 +49,7 @@ function DiffCell({ schoolPct, verifierPct, categoryKey }) {
   if (unfavorable) cls = 'bg-red-50 text-red-700';
 
   return (
-    <span className={`inline-block rounded-md px-2 py-1 text-xs font-semibold ${cls}`}>
+    <span className={`inline-block rounded-md px-2.5 py-1.5 text-sm font-semibold ${cls}`}>
       {diff > 0 ? '+' : ''}{diff}pp
     </span>
   );
@@ -108,27 +108,27 @@ export default function ClusterComparisonList({ rows }) {
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-xs min-w-[960px]">
+        <table className="w-full text-sm min-w-[1000px]">
           <thead>
             <tr className="bg-sky-50 border-b border-sky-100">
-              <th rowSpan={2} className="text-left py-3 px-4 font-semibold text-sky-800 sticky left-0 bg-sky-50 z-10 min-w-[180px]">
+              <th rowSpan={2} className="text-left py-4 px-4 text-sm font-bold text-sky-800 sticky left-0 bg-sky-50 z-10 min-w-[200px]">
                 Cluster
               </th>
-              <th colSpan={3} className="py-2 px-2 font-semibold text-violet-700 border-l border-sky-100 text-center">
+              <th colSpan={3} className="py-3 px-2 text-sm font-bold text-violet-700 border-l border-sky-100 text-center">
                 Verifier
               </th>
-              <th colSpan={3} className="py-2 px-2 font-semibold text-sky-700 border-l border-sky-100 text-center">
+              <th colSpan={3} className="py-3 px-2 text-sm font-bold text-sky-700 border-l border-sky-100 text-center">
                 Schools
               </th>
-              <th colSpan={3} className="py-2 px-2 font-semibold text-emerald-700 border-l border-sky-100 text-center">
+              <th colSpan={3} className="py-3 px-2 text-sm font-bold text-emerald-700 border-l border-sky-100 text-center">
                 Difference
               </th>
             </tr>
-            <tr className="bg-sky-50/80 border-b border-sky-100 text-[10px] uppercase tracking-wide">
+            <tr className="bg-sky-50/80 border-b border-sky-100 text-xs uppercase tracking-wide">
               {CATEGORY.map((c) => (
                 <th
                   key={`v-${c.key}`}
-                  className="py-2 px-2 font-semibold border-l border-sky-100 text-center"
+                  className="py-2.5 px-2 font-semibold border-l border-sky-100 text-center"
                   style={{ color: c.color }}
                 >
                   {c.label}
@@ -137,7 +137,7 @@ export default function ClusterComparisonList({ rows }) {
               {CATEGORY.map((c) => (
                 <th
                   key={`s-${c.key}`}
-                  className="py-2 px-2 font-semibold border-l border-sky-100 text-center"
+                  className="py-2.5 px-2 font-semibold border-l border-sky-100 text-center"
                   style={{ color: c.color }}
                 >
                   {c.label}
@@ -146,7 +146,7 @@ export default function ClusterComparisonList({ rows }) {
               {CATEGORY.map((c) => (
                 <th
                   key={`d-${c.key}`}
-                  className="py-2 px-2 font-semibold border-l border-sky-100 text-center text-emerald-700"
+                  className="py-2.5 px-2 font-semibold border-l border-sky-100 text-center text-emerald-700"
                 >
                   {c.label}
                 </th>
@@ -156,27 +156,27 @@ export default function ClusterComparisonList({ rows }) {
           <tbody>
             {paged.map((row) => (
               <tr key={row.clusterId} className="border-b border-sky-50 hover:bg-sky-50/40">
-                <td className="py-3 px-4 sticky left-0 bg-white hover:bg-sky-50/40 z-10">
-                  <p className="font-medium text-sky-900">{row.clusterName}</p>
-                  <p className="text-[10px] text-sky-500 mt-0.5">
+                <td className="py-4 px-4 sticky left-0 bg-white hover:bg-sky-50/40 z-10">
+                  <p className="font-semibold text-sm text-sky-900">{row.clusterName}</p>
+                  <p className="text-xs text-sky-500 mt-1">
                     {row.districtName}{row.blockName ? ` · ${row.blockName}` : ''}
                   </p>
                 </td>
 
                 {CATEGORY.map((c) => (
-                  <td key={`v-${row.clusterId}-${c.key}`} className="py-3 px-2 text-center border-l border-sky-50">
+                  <td key={`v-${row.clusterId}-${c.key}`} className="py-4 px-3 text-center border-l border-sky-50">
                     <PctCell stats={row.verifierStats} categoryKey={c.key} />
                   </td>
                 ))}
 
                 {CATEGORY.map((c) => (
-                  <td key={`s-${row.clusterId}-${c.key}`} className="py-3 px-2 text-center border-l border-sky-50">
+                  <td key={`s-${row.clusterId}-${c.key}`} className="py-4 px-3 text-center border-l border-sky-50">
                     <PctCell stats={row.schoolStats} categoryKey={c.key} />
                   </td>
                 ))}
 
                 {CATEGORY.map((c) => (
-                  <td key={`d-${row.clusterId}-${c.key}`} className="py-3 px-2 text-center border-l border-sky-50">
+                  <td key={`d-${row.clusterId}-${c.key}`} className="py-4 px-3 text-center border-l border-sky-50">
                     <DiffCell
                       categoryKey={c.key}
                       schoolPct={row.schoolStats?.combined?.[`${c.key}Pct`]}
@@ -190,7 +190,7 @@ export default function ClusterComparisonList({ rows }) {
         </table>
       </div>
 
-      <div className="px-5 py-3 border-t border-sky-100 flex flex-wrap items-center justify-between gap-2 text-xs text-sky-600">
+      <div className="px-5 py-3 border-t border-sky-100 flex flex-wrap items-center justify-between gap-2 text-sm text-sky-600">
         <span>
           Difference = School − Verifier · Green = schools ahead · Page {page + 1} of {totalPages}
         </span>
