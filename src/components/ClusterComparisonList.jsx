@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
+import { Search, Download } from 'lucide-react';
+import { exportClusterComparisonExcel } from '../exportExcel';
 
 const CATEGORY = [
   { key: 'udayman', label: 'Udayman', color: '#f0473f' },
@@ -92,18 +93,28 @@ export default function ClusterComparisonList({ rows }) {
             Verifier sample vs schools in cluster · {filtered.length.toLocaleString()} clusters
           </p>
         </div>
-        <div className="relative w-full sm:w-64">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" />
-          <input
-            type="text"
-            placeholder="Search cluster…"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(0);
-            }}
-            className="w-full pl-9 pr-3 py-2 rounded-xl border border-sky-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
-          />
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="relative w-full sm:w-64">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" />
+            <input
+              type="text"
+              placeholder="Search cluster…"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(0);
+              }}
+              className="w-full pl-9 pr-3 py-2 rounded-xl border border-sky-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => exportClusterComparisonExcel(filtered)}
+            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-50"
+          >
+            <Download className="w-4 h-4" />
+            Download Excel
+          </button>
         </div>
       </div>
 
