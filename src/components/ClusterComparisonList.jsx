@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Search, Download } from 'lucide-react';
+import { Search, Download, SlidersHorizontal, X, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { exportClusterComparisonExcel } from '../exportExcel';
 
 const CATEGORY = [
@@ -7,6 +7,35 @@ const CATEGORY = [
   { key: 'pragatishil', label: 'Pragatishil', color: '#f9a007' },
   { key: 'nipun', label: 'Nipun', color: '#22b566' },
 ];
+
+const SECTIONS = [
+  { key: 'verifier', label: 'Verifier' },
+  { key: 'schools', label: 'Schools' },
+  { key: 'diff', label: 'Difference' },
+];
+
+const FILTER_COLUMNS = SECTIONS.flatMap((section) =>
+  CATEGORY.map((c) => ({
+    id: `${section.key}_${c.key}`,
+    section: section.key,
+    categoryKey: c.key,
+    label: `${section.label} · ${c.label}`,
+  })),
+);
+
+const EMPTY_FILTERS = FILTER_COLUMNS.reduce((acc, col) => {
+  acc[col.id] = { min: '', max: '' };
+  return acc;
+}, {});
+
+function getCellValue(row, section, categoryKey) {
+  if (section === 'verifier') return row.verifierStats?.combined?.[`${categoryKey}Pct`] ?? null;
+  if (section === 'schools') return row.schoolStats?.combined?.[`${categoryKey}Pct`] ?? null;
+  const schoolPct = row.schoolStats?.combined?.[`${categoryKey}Pct`];
+  const verifierPct = row.verifierStats?.combined?.[`${categoryKey}Pct`];
+  if (schoolPct == null || verifierPct == null) return null;
+  return Math.round((schoolPct - verifierPct) * 10) / 10;
+}
 
 function isSchoolFavorable(categoryKey, diff) {
   if (Math.abs(diff) < 0.5) return false;
@@ -56,25 +85,102 @@ function DiffCell({ schoolPct, verifierPct, categoryKey }) {
   );
 }
 
+function SortIcon({ active, direction }) {
+  if (!active) {
+    return <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-40 transition-opacity" />;
+  }
+  return direction === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />;
+}
+
 export default function ClusterComparisonList({ rows }) {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
+  const [showFilters, setShowFilters] = useState(false);
+  const [columnFilters, setColumnFilters] = useState(EMPTY_FILTERS);
+  const [sortConfig, setSortConfig] = useState({ id: null, direction: 'desc' });
   const pageSize = 50;
+
+  const toggleSort = (id) => {
+    setSortConfig((prev) => {
+      if (prev.id === id) {
+        return { id, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { id, direction: id === 'cluster' ? 'asc' : 'desc' };
+    });
+    setPage(0);
+  };
+
+  const activeFilterCount = useMemo(
+    () => Object.values(columnFilters).filter((f) => f.min !== '' || f.max !== '').length,
+    [columnFilters],
+  );
+
+  const updateFilter = (id, field, value) => {
+    setColumnFilters((prev) => ({ ...prev, [id]: { ...prev[id], [field]: value } }));
+    setPage(0);
+  };
+
+  const clearFilters = () => {
+    setColumnFilters(EMPTY_FILTERS);
+    setPage(0);
+  };
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(
-      (r) =>
-        r.clusterName.toLowerCase().includes(q)
-        || r.clusterId.includes(q)
-        || r.districtName.toLowerCase().includes(q)
-        || r.blockName.toLowerCase().includes(q),
-    );
-  }, [rows, search]);
+    let result = rows;
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const paged = filtered.slice(page * pageSize, (page + 1) * pageSize);
+    if (q) {
+      result = result.filter(
+        (r) =>
+          r.clusterName.toLowerCase().includes(q)
+          || r.clusterId.includes(q)
+          || r.districtName.toLowerCase().includes(q)
+          || r.blockName.toLowerCase().includes(q),
+      );
+    }
+
+    const activeCols = FILTER_COLUMNS.filter((col) => {
+      const f = columnFilters[col.id];
+      return f && (f.min !== '' || f.max !== '');
+    });
+
+    if (activeCols.length) {
+      result = result.filter((row) =>
+        activeCols.every((col) => {
+          const { min, max } = columnFilters[col.id];
+          const value = getCellValue(row, col.section, col.categoryKey);
+          if (value == null) return false;
+          if (min !== '' && value < Number(min)) return false;
+          if (max !== '' && value > Number(max)) return false;
+          return true;
+        }),
+      );
+    }
+
+    return result;
+  }, [rows, search, columnFilters]);
+
+  const sorted = useMemo(() => {
+    if (!sortConfig.id) return filtered;
+    const dir = sortConfig.direction === 'asc' ? 1 : -1;
+    const arr = [...filtered];
+    arr.sort((a, b) => {
+      if (sortConfig.id === 'cluster') {
+        return a.clusterName.localeCompare(b.clusterName) * dir;
+      }
+      const col = FILTER_COLUMNS.find((c) => c.id === sortConfig.id);
+      const va = getCellValue(a, col.section, col.categoryKey);
+      const vb = getCellValue(b, col.section, col.categoryKey);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      return (va - vb) * dir;
+    });
+    return arr;
+  }, [filtered, sortConfig]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const paged = sorted.slice(page * pageSize, (page + 1) * pageSize);
 
   if (!rows.length) {
     return (
@@ -109,6 +215,23 @@ export default function ClusterComparisonList({ rows }) {
           </div>
           <button
             type="button"
+            onClick={() => setShowFilters((v) => !v)}
+            className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border px-3 py-2 text-sm font-semibold ${
+              showFilters || activeFilterCount
+                ? 'border-sky-400 bg-sky-50 text-sky-800'
+                : 'border-sky-200 bg-white text-sky-700 hover:bg-sky-50'
+            }`}
+          >
+            <SlidersHorizontal className="w-4 h-4" />
+            Filters
+            {activeFilterCount > 0 && (
+              <span className="inline-flex items-center justify-center rounded-full bg-sky-600 text-white text-xs w-5 h-5">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
             onClick={() => exportClusterComparisonExcel(filtered)}
             className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-50"
           >
@@ -118,12 +241,77 @@ export default function ClusterComparisonList({ rows }) {
         </div>
       </div>
 
+      {showFilters && (
+        <div className="px-5 py-4 border-b border-sky-100 bg-sky-50/50">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-semibold text-sky-700 uppercase tracking-wide">
+              Filter by value (min / max, in %)
+            </p>
+            {activeFilterCount > 0 && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-sky-600 hover:text-sky-800"
+              >
+                <X className="w-3.5 h-3.5" />
+                Clear all
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {SECTIONS.map((section) => (
+              <div key={section.key} className="rounded-xl border border-sky-200 bg-white p-3">
+                <p className="text-xs font-bold text-sky-800 mb-2">{section.label}</p>
+                <div className="space-y-2">
+                  {CATEGORY.map((c) => {
+                    const id = `${section.key}_${c.key}`;
+                    const f = columnFilters[id];
+                    return (
+                      <div key={id} className="flex items-center gap-2">
+                        <span
+                          className="text-xs font-semibold w-20 shrink-0 truncate"
+                          style={{ color: c.color }}
+                        >
+                          {c.label}
+                        </span>
+                        <input
+                          type="number"
+                          placeholder="Min"
+                          value={f.min}
+                          onChange={(e) => updateFilter(id, 'min', e.target.value)}
+                          className="w-full min-w-0 px-2 py-1 rounded-lg border border-sky-200 text-xs focus:outline-none focus:ring-2 focus:ring-sky-400"
+                        />
+                        <span className="text-sky-300 text-xs">–</span>
+                        <input
+                          type="number"
+                          placeholder="Max"
+                          value={f.max}
+                          onChange={(e) => updateFilter(id, 'max', e.target.value)}
+                          className="w-full min-w-0 px-2 py-1 rounded-lg border border-sky-200 text-xs focus:outline-none focus:ring-2 focus:ring-sky-400"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="overflow-x-auto">
         <table className="w-full text-sm min-w-[1000px]">
           <thead>
             <tr className="bg-sky-50 border-b border-sky-100">
-              <th rowSpan={2} className="text-left py-4 px-4 text-sm font-bold text-sky-800 sticky left-0 bg-sky-50 z-10 min-w-[200px]">
-                Cluster
+              <th
+                rowSpan={2}
+                onClick={() => toggleSort('cluster')}
+                className="group text-left py-4 px-4 text-sm font-bold text-sky-800 sticky left-0 bg-sky-50 z-10 min-w-[200px] cursor-pointer select-none hover:bg-sky-100"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  Cluster
+                  <SortIcon active={sortConfig.id === 'cluster'} direction={sortConfig.direction} />
+                </span>
               </th>
               <th colSpan={3} className="py-3 px-2 text-sm font-bold text-violet-700 border-l border-sky-100 text-center">
                 Verifier
@@ -139,27 +327,39 @@ export default function ClusterComparisonList({ rows }) {
               {CATEGORY.map((c) => (
                 <th
                   key={`v-${c.key}`}
-                  className="py-2.5 px-2 font-semibold border-l border-sky-100 text-center"
+                  onClick={() => toggleSort(`verifier_${c.key}`)}
+                  className="group py-2.5 px-2 font-semibold border-l border-sky-100 text-center cursor-pointer select-none hover:bg-sky-100"
                   style={{ color: c.color }}
                 >
-                  {c.label}
+                  <span className="inline-flex items-center justify-center gap-1">
+                    {c.label}
+                    <SortIcon active={sortConfig.id === `verifier_${c.key}`} direction={sortConfig.direction} />
+                  </span>
                 </th>
               ))}
               {CATEGORY.map((c) => (
                 <th
                   key={`s-${c.key}`}
-                  className="py-2.5 px-2 font-semibold border-l border-sky-100 text-center"
+                  onClick={() => toggleSort(`schools_${c.key}`)}
+                  className="group py-2.5 px-2 font-semibold border-l border-sky-100 text-center cursor-pointer select-none hover:bg-sky-100"
                   style={{ color: c.color }}
                 >
-                  {c.label}
+                  <span className="inline-flex items-center justify-center gap-1">
+                    {c.label}
+                    <SortIcon active={sortConfig.id === `schools_${c.key}`} direction={sortConfig.direction} />
+                  </span>
                 </th>
               ))}
               {CATEGORY.map((c) => (
                 <th
                   key={`d-${c.key}`}
-                  className="py-2.5 px-2 font-semibold border-l border-sky-100 text-center text-emerald-700"
+                  onClick={() => toggleSort(`diff_${c.key}`)}
+                  className="group py-2.5 px-2 font-semibold border-l border-sky-100 text-center text-emerald-700 cursor-pointer select-none hover:bg-sky-100"
                 >
-                  {c.label}
+                  <span className="inline-flex items-center justify-center gap-1">
+                    {c.label}
+                    <SortIcon active={sortConfig.id === `diff_${c.key}`} direction={sortConfig.direction} />
+                  </span>
                 </th>
               ))}
             </tr>
