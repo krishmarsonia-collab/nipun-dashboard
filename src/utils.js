@@ -10,13 +10,15 @@ export function buildClusterComparisons(schoolRows, verifierRows, filters) {
   const filteredVerifiers = verifierRows.filter((r) => {
     if (filters.districtId && r.district_id !== filters.districtId) return false;
     if (filters.blockId && r.block_id !== filters.blockId) return false;
-    if (filters.clusterId && r.cluster_id !== filters.clusterId) return false;
+    if (filters.clusterId && r.geo_cluster_id !== filters.clusterId) return false;
     if (filters.schoolId && r.school_id !== filters.schoolId) return false;
     return true;
   });
 
+  // Verifier rows carry their own sampling `cluster_id`, distinct from the geographic
+  // cluster; `geo_cluster_id` is the one that actually matches schools' `cluster_id`.
   const verifierByCluster = new Map();
-  filteredVerifiers.forEach((v) => verifierByCluster.set(v.cluster_id, v));
+  filteredVerifiers.forEach((v) => verifierByCluster.set(v.geo_cluster_id, v));
 
   const schoolsByCluster = new Map();
   filteredSchools.forEach((s) => {
@@ -30,13 +32,13 @@ export function buildClusterComparisons(schoolRows, verifierRows, filters) {
     .map((clusterId) => {
       const schoolList = schoolsByCluster.get(clusterId) || [];
       const verifierRow = verifierByCluster.get(clusterId);
-      const meta = schoolList[0] || verifierRow || {};
+      const meta = schoolList[0] || {};
 
       return {
         clusterId,
-        clusterName: meta.cluster_name || clusterId,
-        districtName: meta.district_name || '',
-        blockName: meta.block_name || '',
+        clusterName: meta.cluster_name || verifierRow?.geo_cluster_name || clusterId,
+        districtName: meta.district_name || verifierRow?.district_name || '',
+        blockName: meta.block_name || verifierRow?.block_name || '',
         schoolList: schoolList.map((s) => ({ id: s.school_id, name: s.school_name })),
         verifierSchool: verifierRow
           ? { id: verifierRow.school_id, name: verifierRow.school_name }
@@ -174,7 +176,9 @@ export function filterVerifierRows(rows, { districtId, blockId, clusterId, schoo
   return rows.filter((r) => {
     if (districtId && r.district_id !== districtId) return false;
     if (blockId && r.block_id !== blockId) return false;
-    if (clusterId && r.cluster_id !== clusterId) return false;
+    // clusterId comes from the school-side cluster dropdown, so it must be matched
+    // against the verifier row's geo_cluster_id, not its own sampling cluster_id.
+    if (clusterId && r.geo_cluster_id !== clusterId) return false;
     if (schoolId && r.school_id !== schoolId) return false;
     return true;
   });

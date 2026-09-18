@@ -28,11 +28,16 @@ const EMPTY_FILTERS = FILTER_COLUMNS.reduce((acc, col) => {
   return acc;
 }, {});
 
+function statPct(stats, categoryKey) {
+  if (!stats || stats.studentsReviewed === 0) return null;
+  return stats.combined[`${categoryKey}Pct`];
+}
+
 function getCellValue(row, section, categoryKey) {
-  if (section === 'verifier') return row.verifierStats?.combined?.[`${categoryKey}Pct`] ?? null;
-  if (section === 'schools') return row.schoolStats?.combined?.[`${categoryKey}Pct`] ?? null;
-  const schoolPct = row.schoolStats?.combined?.[`${categoryKey}Pct`];
-  const verifierPct = row.verifierStats?.combined?.[`${categoryKey}Pct`];
+  if (section === 'verifier') return statPct(row.verifierStats, categoryKey);
+  if (section === 'schools') return statPct(row.schoolStats, categoryKey);
+  const schoolPct = statPct(row.schoolStats, categoryKey);
+  const verifierPct = statPct(row.verifierStats, categoryKey);
   if (schoolPct == null || verifierPct == null) return null;
   return Math.round((schoolPct - verifierPct) * 10) / 10;
 }
@@ -66,7 +71,9 @@ function PctCell({ stats, categoryKey }) {
   );
 }
 
-function DiffCell({ schoolPct, verifierPct, categoryKey }) {
+function DiffCell({ schoolStats, verifierStats, categoryKey }) {
+  const schoolPct = statPct(schoolStats, categoryKey);
+  const verifierPct = statPct(verifierStats, categoryKey);
   if (verifierPct == null || schoolPct == null) {
     return <span className="text-sky-300">—</span>;
   }
@@ -390,8 +397,8 @@ export default function ClusterComparisonList({ rows }) {
                   <td key={`d-${row.clusterId}-${c.key}`} className="py-4 px-3 text-center border-l border-sky-50">
                     <DiffCell
                       categoryKey={c.key}
-                      schoolPct={row.schoolStats?.combined?.[`${c.key}Pct`]}
-                      verifierPct={row.verifierStats?.combined?.[`${c.key}Pct`]}
+                      schoolStats={row.schoolStats}
+                      verifierStats={row.verifierStats}
                     />
                   </td>
                 ))}
