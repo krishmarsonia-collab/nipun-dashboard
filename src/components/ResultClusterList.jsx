@@ -1,99 +1,117 @@
 import { useMemo, useState } from 'react';
 import { Search, Download, SlidersHorizontal, X } from 'lucide-react';
-import { exportClusterComparisonExcel } from '../exportExcel';
-import { CATEGORY, statPct } from '../utils';
+import { exportClusterResultExcel } from '../exportResultExcel';
+import { CATEGORY } from '../utils';
 import SortIcon from './SortIcon';
 
-const SECTIONS = [
-  { key: 'verifier', label: 'Verifier' },
-  { key: 'schools', label: 'Schools' },
-  { key: 'diff', label: 'Difference' },
+const FILTER_COLUMNS = [
+  ...CATEGORY.map((c) => ({ id: c.key, label: c.label, color: c.color })),
+  { id: 'nipunGap', label: 'Nipun Gap', color: '#0ea5e9' },
+  { id: 'studentsReviewed', label: 'Students Reviewed', color: '#0ea5e9' },
 ];
-
-const FILTER_COLUMNS = SECTIONS.flatMap((section) =>
-  CATEGORY.map((c) => ({
-    id: `${section.key}_${c.key}`,
-    section: section.key,
-    categoryKey: c.key,
-    label: `${section.label} · ${c.label}`,
-  })),
-);
 
 const EMPTY_FILTERS = FILTER_COLUMNS.reduce((acc, col) => {
   acc[col.id] = { min: '', max: '' };
   return acc;
 }, {});
 
-const EMPTY_DATA_FILTERS = { verifier: 'any', schools: 'any', diff: 'any' };
-
-function getCellValue(row, section, categoryKey) {
-  if (section === 'verifier') return statPct(row.verifierStats, categoryKey);
-  if (section === 'schools') return statPct(row.schoolStats, categoryKey);
-  const schoolPct = statPct(row.schoolStats, categoryKey);
-  const verifierPct = statPct(row.verifierStats, categoryKey);
-  if (schoolPct == null || verifierPct == null) return null;
-  return Math.round((schoolPct - verifierPct) * 10) / 10;
+function getCellValue(row, columnId) {
+  if (columnId === 'nipunGap') return row.nipunDiff;
+  if (columnId === 'studentsReviewed') return row.result ? row.result.studentsReviewed : null;
+  return row.result ? row.result[`${columnId}Pct`] : null;
 }
 
-function isSchoolFavorable(categoryKey, diff) {
-  if (Math.abs(diff) < 0.5) return false;
-  if (categoryKey === 'nipun') return diff > 0;
-  return diff < 0;
-}
+const SOURCE_LABEL = { verifier: 'Verifier', school: 'Schools' };
+const SOURCE_CLASS = { verifier: 'text-violet-700', school: 'text-sky-700' };
 
-function isSchoolUnfavorable(categoryKey, diff) {
-  if (Math.abs(diff) < 0.5) return false;
-  if (categoryKey === 'nipun') return diff < 0;
-  return diff > 0;
-}
+function ProvenanceLine({ row, entityLabel }) {
+  const diff = row.nipunDiff;
+  const entityLower = entityLabel.toLowerCase();
 
-function PctCell({ stats, categoryKey }) {
-  if (!stats || stats.studentsReviewed === 0) {
-    return <span className="text-sky-300">—</span>;
+  if (!row.resultSource) {
+    return <p className="text-xs text-sky-400 mt-1.5">No data from either source</p>;
   }
-  const cat = CATEGORY.find((c) => c.key === categoryKey);
-  const pctVal = stats.combined[`${categoryKey}Pct`];
-  const count = stats.combined[categoryKey];
+
+  let reason;
+  if (diff == null) {
+    reason = row.resultSource === 'school' ? `no verifier sample for this ${entityLower}` : `no school data for this ${entityLower}`;
+  } else if (row.resultSource === 'verifier') {
+    reason = `overrode schools by ${diff}pp on Nipun`;
+  } else if (diff < 0) {
+    reason = `verifier read ${Math.abs(diff)}pp higher on Nipun`;
+  } else if (diff > 0) {
+    reason = `verifier agreed within ${diff}pp on Nipun`;
+  } else {
+    reason = 'verifier matched exactly on Nipun';
+  }
+
   return (
-    <div className="leading-tight">
-      <span className="font-heading font-bold text-base" style={{ color: cat.color }}>
-        {pctVal}%
-      </span>
-      <p className="text-xs text-sky-600/55 mt-1">{count.toLocaleString()}</p>
+    <p className="text-xs text-sky-500 mt-1.5">
+      via <span className={`font-semibold ${SOURCE_CLASS[row.resultSource]}`}>{SOURCE_LABEL[row.resultSource]}</span>
+      {' — '}{reason}
+    </p>
+  );
+}
+
+function ResultBar({ result }) {
+  if (!result) {
+    return <div className="h-1.5 w-28 rounded-full bg-sky-100 mt-2" />;
+  }
+  const total = CATEGORY.reduce((s, c) => s + result[`${c.key}Pct`], 0) || 1;
+  return (
+    <div className="w-28 mt-2">
+      <div className="flex h-1.5 rounded-full overflow-hidden bg-sky-100">
+        {CATEGORY.map((c) => {
+          const w = (result[`${c.key}Pct`] / total) * 100;
+          if (w <= 0) return null;
+          return (
+            <div
+              key={c.key}
+              style={{ width: `${w}%`, backgroundColor: c.color }}
+              title={`${c.label}: ${result[`${c.key}Pct`]}%`}
+            />
+          );
+        })}
+      </div>
     </div>
   );
 }
 
-function DiffCell({ schoolStats, verifierStats, categoryKey }) {
-  const schoolPct = statPct(schoolStats, categoryKey);
-  const verifierPct = statPct(verifierStats, categoryKey);
-  if (verifierPct == null || schoolPct == null) {
+function PctCell({ result, categoryKey }) {
+  if (!result) {
     return <span className="text-sky-300">—</span>;
   }
-  const diff = Math.round((schoolPct - verifierPct) * 10) / 10;
-  const favorable = isSchoolFavorable(categoryKey, diff);
-  const unfavorable = isSchoolUnfavorable(categoryKey, diff);
+  const cat = CATEGORY.find((c) => c.key === categoryKey);
+  return (
+    <div className="leading-tight">
+      <span className="font-heading font-bold text-base" style={{ color: cat.color }}>
+        {result[`${categoryKey}Pct`]}%
+      </span>
+      <p className="text-xs text-sky-600/55 mt-1">{result[categoryKey].toLocaleString()}</p>
+    </div>
+  );
+}
 
-  let cls = 'text-sky-700';
-  if (favorable) cls = 'bg-emerald-100 text-emerald-800 font-bold';
-  if (unfavorable) cls = 'bg-red-50 text-red-700';
-
+function GapCell({ nipunDiff }) {
+  if (nipunDiff == null) return <span className="text-sky-300">—</span>;
+  const flagged = nipunDiff > 5;
+  const cls = flagged ? 'bg-violet-100 text-violet-800 font-bold' : 'text-sky-600';
   return (
     <span className={`inline-block rounded-md px-2.5 py-1.5 text-sm font-semibold ${cls}`}>
-      {diff > 0 ? '+' : ''}{diff}pp
+      {nipunDiff > 0 ? '+' : ''}{nipunDiff}pp
     </span>
   );
 }
 
 // Renders one row per cluster OR district (or any geo level) — see entityLabel/showLocationMeta props.
-export default function ClusterComparisonList({ rows, entityLabel = 'Cluster', showLocationMeta = true }) {
+export default function ResultClusterList({ rows, entityLabel = 'Cluster', showLocationMeta = true }) {
   const plural = `${entityLabel}s`;
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
   const [columnFilters, setColumnFilters] = useState(EMPTY_FILTERS);
   const [sortConfig, setSortConfig] = useState({ id: null, direction: 'desc' });
-  const [dataFilters, setDataFilters] = useState(EMPTY_DATA_FILTERS);
+  const [dataFilter, setDataFilter] = useState('any');
   const pageSize = 50;
 
   const toggleSort = (id) => {
@@ -108,8 +126,8 @@ export default function ClusterComparisonList({ rows, entityLabel = 'Cluster', s
 
   const activeFilterCount = useMemo(
     () => Object.values(columnFilters).filter((f) => f.min !== '' || f.max !== '').length
-      + Object.values(dataFilters).filter((v) => v !== 'any').length,
-    [columnFilters, dataFilters],
+      + (dataFilter !== 'any' ? 1 : 0),
+    [columnFilters, dataFilter],
   );
 
   const updateFilter = (id, field, value) => {
@@ -119,7 +137,7 @@ export default function ClusterComparisonList({ rows, entityLabel = 'Cluster', s
 
   const clearFilters = () => {
     setColumnFilters(EMPTY_FILTERS);
-    setDataFilters(EMPTY_DATA_FILTERS);
+    setDataFilter('any');
     setPage(0);
   };
 
@@ -137,14 +155,8 @@ export default function ClusterComparisonList({ rows, entityLabel = 'Cluster', s
       );
     }
 
-    const dataSections = SECTIONS.filter((sec) => dataFilters[sec.key] !== 'any');
-    if (dataSections.length) {
-      result = result.filter((row) =>
-        dataSections.every((sec) => {
-          const hasData = getCellValue(row, sec.key, CATEGORY[0].key) != null;
-          return dataFilters[sec.key] === 'has' ? hasData : !hasData;
-        }),
-      );
+    if (dataFilter !== 'any') {
+      result = result.filter((row) => (dataFilter === 'has' ? row.result != null : row.result == null));
     }
 
     const activeCols = FILTER_COLUMNS.filter((col) => {
@@ -156,7 +168,7 @@ export default function ClusterComparisonList({ rows, entityLabel = 'Cluster', s
       result = result.filter((row) =>
         activeCols.every((col) => {
           const { min, max } = columnFilters[col.id];
-          const value = getCellValue(row, col.section, col.categoryKey);
+          const value = getCellValue(row, col.id);
           if (value == null) return false;
           if (min !== '' && value < Number(min)) return false;
           if (max !== '' && value > Number(max)) return false;
@@ -166,12 +178,24 @@ export default function ClusterComparisonList({ rows, entityLabel = 'Cluster', s
     }
 
     return result;
-  }, [rows, search, columnFilters, dataFilters]);
+  }, [rows, search, columnFilters, dataFilter]);
 
   const districts = useMemo(
     () => [...new Set(filtered.map((r) => r.districtName).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
     [filtered],
   );
+
+  const sourceCounts = useMemo(() => {
+    let school = 0;
+    let verifier = 0;
+    let none = 0;
+    filtered.forEach((row) => {
+      if (row.resultSource === 'school') school += 1;
+      else if (row.resultSource === 'verifier') verifier += 1;
+      else none += 1;
+    });
+    return { school, verifier, none };
+  }, [filtered]);
 
   const sorted = useMemo(() => {
     if (!sortConfig.id) return filtered;
@@ -181,9 +205,8 @@ export default function ClusterComparisonList({ rows, entityLabel = 'Cluster', s
       if (sortConfig.id === 'cluster') {
         return a.clusterName.localeCompare(b.clusterName) * dir;
       }
-      const col = FILTER_COLUMNS.find((c) => c.id === sortConfig.id);
-      const va = getCellValue(a, col.section, col.categoryKey);
-      const vb = getCellValue(b, col.section, col.categoryKey);
+      const va = getCellValue(a, sortConfig.id);
+      const vb = getCellValue(b, sortConfig.id);
       if (va == null && vb == null) return 0;
       if (va == null) return 1;
       if (vb == null) return -1;
@@ -207,9 +230,14 @@ export default function ClusterComparisonList({ rows, entityLabel = 'Cluster', s
     <div className="rounded-2xl border border-sky-200 bg-white shadow-sm overflow-hidden">
       <div className="px-5 py-4 border-b border-sky-100 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="font-heading text-lg font-bold text-sky-900">{entityLabel} comparison</h2>
+          <h2 className="font-heading text-lg font-bold text-sky-900">{entityLabel} result</h2>
           <p className="text-xs text-sky-700/60 mt-0.5">
-            Verifier sample vs schools in {entityLabel.toLowerCase()} · {filtered.length.toLocaleString()} {plural.toLowerCase()}
+            <span className="text-sky-700 font-semibold">{sourceCounts.school.toLocaleString()}</span> via Schools ·{' '}
+            <span className="text-violet-700 font-semibold">{sourceCounts.verifier.toLocaleString()}</span> via Verifier
+            {sourceCounts.none > 0 && (
+              <> · <span className="text-sky-400 font-semibold">{sourceCounts.none.toLocaleString()}</span> no data</>
+            )}
+            {' · '}{filtered.length.toLocaleString()} {plural.toLowerCase()}
           </p>
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -245,7 +273,7 @@ export default function ClusterComparisonList({ rows, entityLabel = 'Cluster', s
           </button>
           <button
             type="button"
-            onClick={() => exportClusterComparisonExcel(filtered, { entityLabel })}
+            onClick={() => exportClusterResultExcel(filtered, { entityLabel })}
             className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-50"
           >
             <Download className="w-4 h-4" />
@@ -280,7 +308,7 @@ export default function ClusterComparisonList({ rows, entityLabel = 'Cluster', s
         <div className="px-5 py-4 border-b border-sky-100 bg-sky-50/50">
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs font-semibold text-sky-700 uppercase tracking-wide">
-              Filter by value (min / max, in %)
+              Filter by value
             </p>
             {activeFilterCount > 0 && (
               <button
@@ -293,124 +321,99 @@ export default function ClusterComparisonList({ rows, entityLabel = 'Cluster', s
               </button>
             )}
           </div>
+          <div className="rounded-xl border border-sky-200 bg-white p-3 mb-3 max-w-xs">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-bold text-sky-800">Result</p>
+              <select
+                value={dataFilter}
+                onChange={(e) => {
+                  setDataFilter(e.target.value);
+                  setPage(0);
+                }}
+                className="px-2 py-1 rounded-lg border border-sky-200 text-xs text-sky-800 focus:outline-none focus:ring-2 focus:ring-sky-400"
+              >
+                <option value="any">All rows</option>
+                <option value="has">Has result</option>
+                <option value="none">No data (—)</option>
+              </select>
+            </div>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {SECTIONS.map((section) => (
-              <div key={section.key} className="rounded-xl border border-sky-200 bg-white p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-bold text-sky-800">{section.label}</p>
-                  <select
-                    value={dataFilters[section.key]}
-                    onChange={(e) => {
-                      setDataFilters((prev) => ({ ...prev, [section.key]: e.target.value }));
-                      setPage(0);
-                    }}
-                    className="px-2 py-1 rounded-lg border border-sky-200 text-xs text-sky-800 focus:outline-none focus:ring-2 focus:ring-sky-400"
-                  >
-                    <option value="any">All rows</option>
-                    <option value="has">Has data</option>
-                    <option value="none">No data (—)</option>
-                  </select>
+            {FILTER_COLUMNS.map((col) => {
+              const f = columnFilters[col.id];
+              return (
+                <div key={col.id} className="rounded-xl border border-sky-200 bg-white p-3">
+                  <p className="text-xs font-semibold mb-2 truncate" style={{ color: col.color }}>
+                    {col.label}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      placeholder="Min"
+                      value={f.min}
+                      onChange={(e) => updateFilter(col.id, 'min', e.target.value)}
+                      className="w-full min-w-0 px-2 py-1 rounded-lg border border-sky-200 text-xs focus:outline-none focus:ring-2 focus:ring-sky-400"
+                    />
+                    <span className="text-sky-300 text-xs">–</span>
+                    <input
+                      type="number"
+                      placeholder="Max"
+                      value={f.max}
+                      onChange={(e) => updateFilter(col.id, 'max', e.target.value)}
+                      className="w-full min-w-0 px-2 py-1 rounded-lg border border-sky-200 text-xs focus:outline-none focus:ring-2 focus:ring-sky-400"
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  {CATEGORY.map((c) => {
-                    const id = `${section.key}_${c.key}`;
-                    const f = columnFilters[id];
-                    return (
-                      <div key={id} className="flex items-center gap-2">
-                        <span
-                          className="text-xs font-semibold w-20 shrink-0 truncate"
-                          style={{ color: c.color }}
-                        >
-                          {c.label}
-                        </span>
-                        <input
-                          type="number"
-                          placeholder="Min"
-                          value={f.min}
-                          onChange={(e) => updateFilter(id, 'min', e.target.value)}
-                          className="w-full min-w-0 px-2 py-1 rounded-lg border border-sky-200 text-xs focus:outline-none focus:ring-2 focus:ring-sky-400"
-                        />
-                        <span className="text-sky-300 text-xs">–</span>
-                        <input
-                          type="number"
-                          placeholder="Max"
-                          value={f.max}
-                          onChange={(e) => updateFilter(id, 'max', e.target.value)}
-                          className="w-full min-w-0 px-2 py-1 rounded-lg border border-sky-200 text-xs focus:outline-none focus:ring-2 focus:ring-sky-400"
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
 
       <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[1000px]">
+        <table className="w-full text-sm min-w-[880px]">
           <thead>
             <tr className="bg-sky-50 border-b border-sky-100">
               <th
-                rowSpan={2}
                 onClick={() => toggleSort('cluster')}
-                className="group text-left py-4 px-4 text-sm font-bold text-sky-800 sticky left-0 bg-sky-50 z-10 min-w-[200px] cursor-pointer select-none hover:bg-sky-100"
+                className="group text-left py-3 px-4 text-sm font-bold text-sky-800 sticky left-0 bg-sky-50 z-10 min-w-[260px] cursor-pointer select-none hover:bg-sky-100"
               >
                 <span className="inline-flex items-center gap-1.5">
-                  {entityLabel}
+                  {entityLabel} · Result
                   <SortIcon active={sortConfig.id === 'cluster'} direction={sortConfig.direction} />
                 </span>
               </th>
-              <th colSpan={3} className="py-3 px-2 text-sm font-bold text-violet-700 border-l border-sky-100 text-center">
-                Verifier
-              </th>
-              <th colSpan={3} className="py-3 px-2 text-sm font-bold text-sky-700 border-l border-sky-100 text-center">
-                Schools
-              </th>
-              <th colSpan={3} className="py-3 px-2 text-sm font-bold text-emerald-700 border-l border-sky-100 text-center">
-                Difference
-              </th>
-            </tr>
-            <tr className="bg-sky-50/80 border-b border-sky-100 text-xs uppercase tracking-wide">
               {CATEGORY.map((c) => (
                 <th
-                  key={`v-${c.key}`}
-                  onClick={() => toggleSort(`verifier_${c.key}`)}
-                  className="group py-2.5 px-2 font-semibold border-l border-sky-100 text-center cursor-pointer select-none hover:bg-sky-100"
+                  key={c.key}
+                  onClick={() => toggleSort(c.key)}
+                  className="group py-3 px-2 font-semibold border-l border-sky-100 text-center cursor-pointer select-none hover:bg-sky-100"
                   style={{ color: c.color }}
                 >
                   <span className="inline-flex items-center justify-center gap-1">
                     {c.label}
-                    <SortIcon active={sortConfig.id === `verifier_${c.key}`} direction={sortConfig.direction} />
+                    <SortIcon active={sortConfig.id === c.key} direction={sortConfig.direction} />
                   </span>
                 </th>
               ))}
-              {CATEGORY.map((c) => (
-                <th
-                  key={`s-${c.key}`}
-                  onClick={() => toggleSort(`schools_${c.key}`)}
-                  className="group py-2.5 px-2 font-semibold border-l border-sky-100 text-center cursor-pointer select-none hover:bg-sky-100"
-                  style={{ color: c.color }}
-                >
-                  <span className="inline-flex items-center justify-center gap-1">
-                    {c.label}
-                    <SortIcon active={sortConfig.id === `schools_${c.key}`} direction={sortConfig.direction} />
-                  </span>
-                </th>
-              ))}
-              {CATEGORY.map((c) => (
-                <th
-                  key={`d-${c.key}`}
-                  onClick={() => toggleSort(`diff_${c.key}`)}
-                  className="group py-2.5 px-2 font-semibold border-l border-sky-100 text-center text-emerald-700 cursor-pointer select-none hover:bg-sky-100"
-                >
-                  <span className="inline-flex items-center justify-center gap-1">
-                    {c.label}
-                    <SortIcon active={sortConfig.id === `diff_${c.key}`} direction={sortConfig.direction} />
-                  </span>
-                </th>
-              ))}
+              <th
+                onClick={() => toggleSort('nipunGap')}
+                className="group py-3 px-2 font-semibold border-l border-sky-100 text-center text-sky-700 cursor-pointer select-none hover:bg-sky-100"
+              >
+                <span className="inline-flex items-center justify-center gap-1">
+                  Nipun Gap
+                  <SortIcon active={sortConfig.id === 'nipunGap'} direction={sortConfig.direction} />
+                </span>
+              </th>
+              <th
+                onClick={() => toggleSort('studentsReviewed')}
+                className="group py-3 px-2 font-semibold border-l border-sky-100 text-center text-sky-700 cursor-pointer select-none hover:bg-sky-100"
+              >
+                <span className="inline-flex items-center justify-center gap-1">
+                  Reviewed
+                  <SortIcon active={sortConfig.id === 'studentsReviewed'} direction={sortConfig.direction} />
+                </span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -423,29 +426,23 @@ export default function ClusterComparisonList({ rows, entityLabel = 'Cluster', s
                       {row.districtName}{row.blockName ? ` · ${row.blockName}` : ''}
                     </p>
                   )}
+                  <ResultBar result={row.result} />
+                  <ProvenanceLine row={row} entityLabel={entityLabel} />
                 </td>
 
                 {CATEGORY.map((c) => (
-                  <td key={`v-${row.clusterId}-${c.key}`} className="py-4 px-3 text-center border-l border-sky-50">
-                    <PctCell stats={row.verifierStats} categoryKey={c.key} />
+                  <td key={`${row.clusterId}-${c.key}`} className="py-4 px-3 text-center border-l border-sky-50">
+                    <PctCell result={row.result} categoryKey={c.key} />
                   </td>
                 ))}
 
-                {CATEGORY.map((c) => (
-                  <td key={`s-${row.clusterId}-${c.key}`} className="py-4 px-3 text-center border-l border-sky-50">
-                    <PctCell stats={row.schoolStats} categoryKey={c.key} />
-                  </td>
-                ))}
+                <td className="py-4 px-3 text-center border-l border-sky-50">
+                  <GapCell nipunDiff={row.nipunDiff} />
+                </td>
 
-                {CATEGORY.map((c) => (
-                  <td key={`d-${row.clusterId}-${c.key}`} className="py-4 px-3 text-center border-l border-sky-50">
-                    <DiffCell
-                      categoryKey={c.key}
-                      schoolStats={row.schoolStats}
-                      verifierStats={row.verifierStats}
-                    />
-                  </td>
-                ))}
+                <td className="py-4 px-3 text-center border-l border-sky-50 text-sky-700 font-semibold">
+                  {row.result ? row.result.studentsReviewed.toLocaleString() : <span className="text-sky-300 font-normal">—</span>}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -454,7 +451,7 @@ export default function ClusterComparisonList({ rows, entityLabel = 'Cluster', s
 
       <div className="px-5 py-3 border-t border-sky-100 flex flex-wrap items-center justify-between gap-2 text-sm text-sky-600">
         <span>
-          Difference = School − Verifier · Green = schools ahead · Showing{' '}
+          Nipun Gap = Schools − Verifier (same sign as the Comparison page) · Highlighted when the verifier overruled the school · Showing{' '}
           <strong className="text-sky-800">
             {sorted.length === 0 ? 0 : page * pageSize + 1}–{Math.min((page + 1) * pageSize, sorted.length)}
           </strong>{' '}

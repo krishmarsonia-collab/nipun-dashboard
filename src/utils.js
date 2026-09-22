@@ -50,6 +50,83 @@ export function buildClusterComparisons(schoolRows, verifierRows, filters) {
     .sort((a, b) => a.clusterName.localeCompare(b.clusterName));
 }
 
+export function buildDistrictComparisons(schoolRows, verifierRows, filters) {
+  const filteredSchools = filterSchoolRows(schoolRows, filters);
+  const filteredVerifiers = filterVerifierRows(verifierRows, filters);
+
+  const schoolsByDistrict = new Map();
+  filteredSchools.forEach((s) => {
+    if (!schoolsByDistrict.has(s.district_id)) schoolsByDistrict.set(s.district_id, []);
+    schoolsByDistrict.get(s.district_id).push(s);
+  });
+
+  const verifiersByDistrict = new Map();
+  filteredVerifiers.forEach((v) => {
+    if (!verifiersByDistrict.has(v.district_id)) verifiersByDistrict.set(v.district_id, []);
+    verifiersByDistrict.get(v.district_id).push(v);
+  });
+
+  const districtIds = new Set([...schoolsByDistrict.keys(), ...verifiersByDistrict.keys()]);
+
+  // Row shape intentionally mirrors buildClusterComparisons' output (clusterId/clusterName/
+  // districtName/blockName/schoolStats/verifierStats) so it's a drop-in for the same list
+  // components and export functions — see the entityLabel/showLocationMeta props they take.
+  return Array.from(districtIds)
+    .map((districtId) => {
+      const schoolList = schoolsByDistrict.get(districtId) || [];
+      const verifierList = verifiersByDistrict.get(districtId) || [];
+      const meta = schoolList[0] || verifierList[0] || {};
+
+      return {
+        clusterId: districtId,
+        clusterName: meta.district_name || districtId,
+        districtName: meta.district_name || '',
+        blockName: '',
+        schoolStats: aggregateRows(schoolList),
+        verifierStats: verifierList.length ? aggregateRows(verifierList) : null,
+      };
+    })
+    .sort((a, b) => a.clusterName.localeCompare(b.clusterName));
+}
+
+export function buildBlockComparisons(schoolRows, verifierRows, filters) {
+  const filteredSchools = filterSchoolRows(schoolRows, filters);
+  const filteredVerifiers = filterVerifierRows(verifierRows, filters);
+
+  const schoolsByBlock = new Map();
+  filteredSchools.forEach((s) => {
+    if (!schoolsByBlock.has(s.block_id)) schoolsByBlock.set(s.block_id, []);
+    schoolsByBlock.get(s.block_id).push(s);
+  });
+
+  const verifiersByBlock = new Map();
+  filteredVerifiers.forEach((v) => {
+    if (!verifiersByBlock.has(v.block_id)) verifiersByBlock.set(v.block_id, []);
+    verifiersByBlock.get(v.block_id).push(v);
+  });
+
+  const blockIds = new Set([...schoolsByBlock.keys(), ...verifiersByBlock.keys()]);
+
+  // Row shape mirrors buildClusterComparisons/buildDistrictComparisons' output — drop-in
+  // for the same list components and export functions via entityLabel="Block".
+  return Array.from(blockIds)
+    .map((blockId) => {
+      const schoolList = schoolsByBlock.get(blockId) || [];
+      const verifierList = verifiersByBlock.get(blockId) || [];
+      const meta = schoolList[0] || verifierList[0] || {};
+
+      return {
+        clusterId: blockId,
+        clusterName: meta.block_name || blockId,
+        districtName: meta.district_name || '',
+        blockName: '',
+        schoolStats: aggregateRows(schoolList),
+        verifierStats: verifierList.length ? aggregateRows(verifierList) : null,
+      };
+    })
+    .sort((a, b) => a.clusterName.localeCompare(b.clusterName));
+}
+
 /** Parse a CSV line respecting quoted fields */
 function parseLine(line) {
   const out = [];
@@ -182,6 +259,71 @@ export function filterVerifierRows(rows, { districtId, blockId, clusterId, schoo
     if (schoolId && r.school_id !== schoolId) return false;
     return true;
   });
+}
+
+export const CATEGORY = [
+  { key: 'udayman', label: 'Udayman', short: 'U', color: '#f0473f', light: '#ffe1df' },
+  { key: 'pragatishil', label: 'Pragatishil', short: 'P', color: '#f9a007', light: '#fff3c4' },
+  { key: 'nipun', label: 'Nipun', short: 'N', color: '#22b566', light: '#d5f9e2' },
+];
+
+/** Combined-category percentage for one source, or null when there's no data to show. */
+export function statPct(stats, categoryKey) {
+  if (!stats || stats.studentsReviewed === 0) return null;
+  return stats.combined[`${categoryKey}Pct`];
+}
+
+/** Combined-category raw count for one source, or null when there's no data to show. */
+export function statCount(stats, categoryKey) {
+  if (!stats || stats.studentsReviewed === 0) return null;
+  return stats.combined[categoryKey];
+}
+
+/**
+ * Picks the trusted source for one cluster: verifier only when the school's self-reported
+ * Nipun % is MORE than 5pp HIGHER than the audit sample's (catching an over-optimistic
+ * school self-report) — schools otherwise, including when the verifier reads higher than
+ * schools, by any margin. Falls back to whichever side has data when the other is missing.
+ *
+ * `nipunDiff` is School − Verifier (matching the Comparison page's "Difference" column
+ * convention, so the same cluster shows the same sign on both pages) — the verifier wins
+ * when `nipunDiff` is *more than 5pp positive*.
+ */
+export function pickClusterResult(row) {
+  const schoolNipun = statPct(row.schoolStats, 'nipun');
+  const verifierNipun = statPct(row.verifierStats, 'nipun');
+
+  let resultSource = null; // 'school' | 'verifier' | null
+  let nipunDiff = null; // school - verifier, null when either side has no data
+
+  if (schoolNipun != null && verifierNipun != null) {
+    nipunDiff = Math.round((schoolNipun - verifierNipun) * 10) / 10;
+    resultSource = nipunDiff > 5 ? 'verifier' : 'school';
+  } else if (verifierNipun != null) {
+    resultSource = 'verifier';
+  } else if (schoolNipun != null) {
+    resultSource = 'school';
+  }
+
+  const sourceStats = resultSource === 'verifier' ? row.verifierStats
+    : resultSource === 'school' ? row.schoolStats
+    : null;
+
+  const result = sourceStats ? {
+    udaymanPct: sourceStats.combined.udaymanPct,
+    pragatishilPct: sourceStats.combined.pragatishilPct,
+    nipunPct: sourceStats.combined.nipunPct,
+    udayman: sourceStats.combined.udayman,
+    pragatishil: sourceStats.combined.pragatishil,
+    nipun: sourceStats.combined.nipun,
+    studentsReviewed: sourceStats.studentsReviewed,
+  } : null;
+
+  return { ...row, resultSource, nipunDiff, result };
+}
+
+export function buildClusterResults(clusterComparisons) {
+  return clusterComparisons.map(pickClusterResult);
 }
 
 export function scopeLabel(filters) {
