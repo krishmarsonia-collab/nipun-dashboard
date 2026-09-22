@@ -28,6 +28,8 @@ const EMPTY_FILTERS = FILTER_COLUMNS.reduce((acc, col) => {
   return acc;
 }, {});
 
+const EMPTY_DATA_FILTERS = { verifier: 'any', schools: 'any', diff: 'any' };
+
 function statPct(stats, categoryKey) {
   if (!stats || stats.studentsReviewed === 0) return null;
   return stats.combined[`${categoryKey}Pct`];
@@ -105,6 +107,7 @@ export default function ClusterComparisonList({ rows }) {
   const [showFilters, setShowFilters] = useState(false);
   const [columnFilters, setColumnFilters] = useState(EMPTY_FILTERS);
   const [sortConfig, setSortConfig] = useState({ id: null, direction: 'desc' });
+  const [dataFilters, setDataFilters] = useState(EMPTY_DATA_FILTERS);
   const pageSize = 50;
 
   const toggleSort = (id) => {
@@ -118,8 +121,9 @@ export default function ClusterComparisonList({ rows }) {
   };
 
   const activeFilterCount = useMemo(
-    () => Object.values(columnFilters).filter((f) => f.min !== '' || f.max !== '').length,
-    [columnFilters],
+    () => Object.values(columnFilters).filter((f) => f.min !== '' || f.max !== '').length
+      + Object.values(dataFilters).filter((v) => v !== 'any').length,
+    [columnFilters, dataFilters],
   );
 
   const updateFilter = (id, field, value) => {
@@ -129,6 +133,7 @@ export default function ClusterComparisonList({ rows }) {
 
   const clearFilters = () => {
     setColumnFilters(EMPTY_FILTERS);
+    setDataFilters(EMPTY_DATA_FILTERS);
     setPage(0);
   };
 
@@ -143,6 +148,16 @@ export default function ClusterComparisonList({ rows }) {
           || r.clusterId.includes(q)
           || r.districtName.toLowerCase().includes(q)
           || r.blockName.toLowerCase().includes(q),
+      );
+    }
+
+    const dataSections = SECTIONS.filter((sec) => dataFilters[sec.key] !== 'any');
+    if (dataSections.length) {
+      result = result.filter((row) =>
+        dataSections.every((sec) => {
+          const hasData = getCellValue(row, sec.key, CATEGORY[0].key) != null;
+          return dataFilters[sec.key] === 'has' ? hasData : !hasData;
+        }),
       );
     }
 
@@ -165,7 +180,7 @@ export default function ClusterComparisonList({ rows }) {
     }
 
     return result;
-  }, [rows, search, columnFilters]);
+  }, [rows, search, columnFilters, dataFilters]);
 
   const sorted = useMemo(() => {
     if (!sortConfig.id) return filtered;
@@ -268,7 +283,21 @@ export default function ClusterComparisonList({ rows }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {SECTIONS.map((section) => (
               <div key={section.key} className="rounded-xl border border-sky-200 bg-white p-3">
-                <p className="text-xs font-bold text-sky-800 mb-2">{section.label}</p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-bold text-sky-800">{section.label}</p>
+                  <select
+                    value={dataFilters[section.key]}
+                    onChange={(e) => {
+                      setDataFilters((prev) => ({ ...prev, [section.key]: e.target.value }));
+                      setPage(0);
+                    }}
+                    className="px-2 py-1 rounded-lg border border-sky-200 text-xs text-sky-800 focus:outline-none focus:ring-2 focus:ring-sky-400"
+                  >
+                    <option value="any">All rows</option>
+                    <option value="has">Has data</option>
+                    <option value="none">No data (—)</option>
+                  </select>
+                </div>
                 <div className="space-y-2">
                   {CATEGORY.map((c) => {
                     const id = `${section.key}_${c.key}`;
@@ -410,7 +439,11 @@ export default function ClusterComparisonList({ rows }) {
 
       <div className="px-5 py-3 border-t border-sky-100 flex flex-wrap items-center justify-between gap-2 text-sm text-sky-600">
         <span>
-          Difference = School − Verifier · Green = schools ahead · Page {page + 1} of {totalPages}
+          Difference = School − Verifier · Green = schools ahead · Showing{' '}
+          <strong className="text-sky-800">
+            {sorted.length === 0 ? 0 : page * pageSize + 1}–{Math.min((page + 1) * pageSize, sorted.length)}
+          </strong>{' '}
+          of <strong className="text-sky-800">{sorted.length.toLocaleString()}</strong> clusters · Page {page + 1} of {totalPages}
         </span>
         {totalPages > 1 && (
           <div className="flex gap-2">
