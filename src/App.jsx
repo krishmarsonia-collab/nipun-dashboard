@@ -37,6 +37,7 @@ export default function App() {
   const [blockId, setBlockId] = useState('');
   const [clusterId, setClusterId] = useState('');
   const [schoolId, setSchoolId] = useState('');
+  const [managementType, setManagementType] = useState('government');
 
   useEffect(() => {
     Promise.all([
@@ -52,8 +53,8 @@ export default function App() {
   }, []);
 
   const filters = useMemo(
-    () => ({ districtId, blockId, clusterId, schoolId }),
-    [districtId, blockId, clusterId, schoolId],
+    () => ({ districtId, blockId, clusterId, schoolId, managementType }),
+    [districtId, blockId, clusterId, schoolId, managementType],
   );
 
   const districts = useMemo(
@@ -179,7 +180,7 @@ export default function App() {
             <Filter className="w-4 h-4 text-sky-600" />
             <h2 className="font-heading font-bold text-sky-900">Location filters</h2>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             <div>
               <label className="text-[11px] font-semibold text-sky-700/70 uppercase tracking-wide">District</label>
               <select
@@ -245,6 +246,18 @@ export default function App() {
                 {schools.map((s) => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold text-sky-700/70 uppercase tracking-wide">School Management</label>
+              <select
+                className={`${selectClass} mt-1`}
+                value={managementType}
+                onChange={(e) => setManagementType(e.target.value)}
+              >
+                <option value="">All management types</option>
+                <option value="private">Private</option>
+                <option value="government">Government</option>
               </select>
             </div>
           </div>

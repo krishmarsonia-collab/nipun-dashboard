@@ -1,19 +1,6 @@
 export function buildClusterComparisons(schoolRows, verifierRows, filters) {
-  const filteredSchools = schoolRows.filter((r) => {
-    if (filters.districtId && r.district_id !== filters.districtId) return false;
-    if (filters.blockId && r.block_id !== filters.blockId) return false;
-    if (filters.clusterId && r.cluster_id !== filters.clusterId) return false;
-    if (filters.schoolId && r.school_id !== filters.schoolId) return false;
-    return true;
-  });
-
-  const filteredVerifiers = verifierRows.filter((r) => {
-    if (filters.districtId && r.district_id !== filters.districtId) return false;
-    if (filters.blockId && r.block_id !== filters.blockId) return false;
-    if (filters.clusterId && r.geo_cluster_id !== filters.clusterId) return false;
-    if (filters.schoolId && r.school_id !== filters.schoolId) return false;
-    return true;
-  });
+  const filteredSchools = filterSchoolRows(schoolRows, filters);
+  const filteredVerifiers = filterVerifierRows(verifierRows, filters);
 
   // Verifier rows carry their own sampling `cluster_id`, distinct from the geographic
   // cluster; `geo_cluster_id` is the one that actually matches schools' `cluster_id`.
@@ -239,17 +226,24 @@ export function uniqueSorted(rows, idKey, nameKey) {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export function filterSchoolRows(rows, { districtId, blockId, clusterId, schoolId }) {
+const PRIVATE_MANAGEMENT_IDS = new Set(['5', '97']);
+
+export function getManagementType(schoolManagementId) {
+  return PRIVATE_MANAGEMENT_IDS.has(String(schoolManagementId)) ? 'private' : 'government';
+}
+
+export function filterSchoolRows(rows, { districtId, blockId, clusterId, schoolId, managementType }) {
   return rows.filter((r) => {
     if (districtId && r.district_id !== districtId) return false;
     if (blockId && r.block_id !== blockId) return false;
     if (clusterId && r.cluster_id !== clusterId) return false;
     if (schoolId && r.school_id !== schoolId) return false;
+    if (managementType && getManagementType(r.school_management_id) !== managementType) return false;
     return true;
   });
 }
 
-export function filterVerifierRows(rows, { districtId, blockId, clusterId, schoolId }) {
+export function filterVerifierRows(rows, { districtId, blockId, clusterId, schoolId, managementType }) {
   return rows.filter((r) => {
     if (districtId && r.district_id !== districtId) return false;
     if (blockId && r.block_id !== blockId) return false;
@@ -257,6 +251,7 @@ export function filterVerifierRows(rows, { districtId, blockId, clusterId, schoo
     // against the verifier row's geo_cluster_id, not its own sampling cluster_id.
     if (clusterId && r.geo_cluster_id !== clusterId) return false;
     if (schoolId && r.school_id !== schoolId) return false;
+    if (managementType && getManagementType(r.school_management_id) !== managementType) return false;
     return true;
   });
 }
@@ -327,9 +322,14 @@ export function buildClusterResults(clusterComparisons) {
 }
 
 export function scopeLabel(filters) {
-  if (filters.schoolId) return 'School';
-  if (filters.clusterId) return 'Cluster';
-  if (filters.blockId) return 'Block';
-  if (filters.districtId) return 'District';
-  return 'State-wide';
+  let label;
+  if (filters.schoolId) label = 'School';
+  else if (filters.clusterId) label = 'Cluster';
+  else if (filters.blockId) label = 'Block';
+  else if (filters.districtId) label = 'District';
+  else label = 'State-wide';
+
+  if (filters.managementType === 'private') return `${label} · Private`;
+  if (filters.managementType === 'government') return `${label} · Government`;
+  return label;
 }
